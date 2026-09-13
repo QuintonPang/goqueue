@@ -2,12 +2,14 @@ package worker
 
 import (
 	"fmt"
+	"sync"
 	"time"
 
 	"goqueue/queue"
 )
 
-func Start(id int) {
+func Start(id int, wg *sync.WaitGroup) {
+	defer wg.Done()
 
 	fmt.Println("Worker", id, "started")
 
