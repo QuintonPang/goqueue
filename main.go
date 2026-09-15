@@ -1,7 +1,7 @@
 package main
 
 import (
-	"time"
+	"sync"
 
 	"goqueue/job"
 	"goqueue/queue"
@@ -9,10 +9,13 @@ import (
 )
 
 func main() {
+	var wg sync.WaitGroup
 
-	go worker.Start(1)
-	go worker.Start(2)
-	go worker.Start(3)
+	wg.Add(3)
+
+	go worker.Start(1, &wg)
+	go worker.Start(2, &wg)
+	go worker.Start(3, &wg)
 
 	for i := 1; i <= 20; i++ {
 		queue.JobQueue <- job.Job{
@@ -21,7 +24,7 @@ func main() {
 			Status: job.Pending,
 		}
 	}
-	close(queue.JobQueue)
 
-	time.Sleep(10 * time.Second)
+	close(queue.JobQueue)
+	wg.Wait()
 }
