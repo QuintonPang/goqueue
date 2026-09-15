@@ -1,10 +1,12 @@
 package main
 
 import (
+	"fmt"
+	"log"
+	"net/http"
 	"sync"
 
-	"goqueue/job"
-	"goqueue/queue"
+	"goqueue/api"
 	"goqueue/worker"
 )
 
@@ -12,19 +14,14 @@ func main() {
 	var wg sync.WaitGroup
 
 	wg.Add(3)
-
 	go worker.Start(1, &wg)
 	go worker.Start(2, &wg)
 	go worker.Start(3, &wg)
 
-	for i := 1; i <= 20; i++ {
-		queue.JobQueue <- job.Job{
-			ID:     i,
-			Type:   "email",
-			Status: job.Pending,
-		}
-	}
+	http.HandleFunc("/jobs", api.CreateJob)
 
-	close(queue.JobQueue)
-	wg.Wait()
+	fmt.Println("GoQueue API listening on http://localhost:8080")
+	if err := http.ListenAndServe(":8080", nil); err != nil {
+		log.Fatal(err)
+	}
 }
