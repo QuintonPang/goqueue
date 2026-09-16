@@ -5,7 +5,9 @@ import (
 	"sync"
 	"time"
 
+	"goqueue/job"
 	"goqueue/queue"
+	"goqueue/store"
 )
 
 func Start(id int, wg *sync.WaitGroup) {
@@ -13,10 +15,14 @@ func Start(id int, wg *sync.WaitGroup) {
 
 	fmt.Println("Worker", id, "started")
 
-	for job := range queue.JobQueue {
-		fmt.Println("Worker", id, "processing", job.ID)
+	for queuedJob := range queue.JobQueue {
+		store.UpdateStatus(queuedJob.ID, job.Running)
+		fmt.Println("Worker", id, "processing", queuedJob.ID)
+
 		time.Sleep(2 * time.Second)
-		fmt.Println("Worker", id, "completed", job.ID)
+
+		store.UpdateStatus(queuedJob.ID, job.Completed)
+		fmt.Println("Worker", id, "completed", queuedJob.ID)
 	}
 
 	fmt.Println("Worker", id, "stopped")
