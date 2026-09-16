@@ -19,6 +19,7 @@ func main() {
 	go worker.Start(3, &wg)
 
 	http.HandleFunc("/jobs", api.CreateJob)
+	http.HandleFunc("/jobs/", api.GetJob)
 
 	fmt.Println("GoQueue API listening on http://localhost:8080")
 	if err := http.ListenAndServe(":8080", nil); err != nil {
