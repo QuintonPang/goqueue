@@ -3,11 +3,14 @@ package api
 import (
 	"encoding/json"
 	"net/http"
+	"strconv"
+	"strings"
 	"sync"
 	"time"
 
 	"goqueue/job"
 	"goqueue/queue"
+	"goqueue/store"
 )
 
 var (
@@ -50,9 +53,33 @@ func CreateJob(w http.ResponseWriter, r *http.Request) {
 		CreatedAt: time.Now(),
 	}
 
+	store.Add(newJob)
 	queue.JobQueue <- newJob
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusAccepted)
 	_ = json.NewEncoder(w).Encode(newJob)
+}
+
+func GetJob(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	idText := strings.TrimPrefix(r.URL.Path, "/jobs/")
+	id, err := strconv.Atoi(idText)
+	if err != nil || id <= 0 {
+		http.Error(w, "invalid job id", http.StatusBadRequest)
+		return
+	}
+
+	storedJob, ok := store.Get(id)
+	if !ok {
+		http.Error(w, "job not found", http.StatusNotFound)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(storedJob)
 }
