@@ -51,8 +51,7 @@ func main() {
 	fmt.Println("Stopping HTTP server...")
 	// Wait for handlers to finish before closing the channel they send jobs to.
 	if err := server.Shutdown(context.Background()); err != nil {
-		log.Printf("HTTP server shutdown failed: %v", err)
-		return
+		log.Fatalf("HTTP server shutdown failed: %v", err)
 	}
 
 	fmt.Println("Closing job queue...")
@@ -60,8 +59,8 @@ func main() {
 
 	fmt.Println("Waiting for workers to finish...")
 	wg.Wait()
-	fmt.Println("Shutdown complete")
 	if listenErr != nil {
 		log.Fatal(listenErr)
 	}
+	fmt.Println("Shutdown complete")
 }
