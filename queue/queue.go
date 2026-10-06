@@ -1,5 +1,6 @@
-package queue
+package queue // queue owns the channel that connects HTTP job creation to background workers.
 
-import "goqueue/job"
+import "goqueue/job" // job supplies the Job type that travels through the channel.
 
-var JobQueue = make(chan job.Job, 100)
+// JobQueue is a buffered channel shared by API handlers and workers.
+var JobQueue = make(chan job.Job, 100) // The buffer can hold up to 100 waiting jobs before a sender must block.
