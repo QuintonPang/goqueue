@@ -1,11 +1,11 @@
 package api // Use the api package so the tests can call CreateJob and GetJob directly.
 
 import (
-	"bytes"         // bytes lets us build an in-memory request body from JSON text.
-	"encoding/json" // encoding/json decodes the handler's JSON response into a Go struct.
-	"net/http"      // net/http provides method names and status-code constants.
+	"bytes"            // bytes lets us build an in-memory request body from JSON text.
+	"encoding/json"    // encoding/json decodes the handler's JSON response into a Go struct.
+	"net/http"         // net/http provides method names and status-code constants.
 	"net/http/httptest" // httptest creates fake HTTP requests and response recorders for tests.
-	"testing"       // testing is Go's built-in test framework.
+	"testing"          // testing is Go's built-in test framework.
 
 	"goqueue/job"   // job provides the Job struct and status constants.
 	"goqueue/store" // store lets us prepare and verify job data used by the handlers.
@@ -13,8 +13,8 @@ import (
 
 func TestCreateJob(t *testing.T) { // Test that POST /jobs accepts valid JSON and creates a pending job.
 	body := bytes.NewBufferString(`{"type":"email","payload":"Send test email"}`) // Build the JSON request body in memory.
-	req := httptest.NewRequest(http.MethodPost, "/jobs", body)                    // Create a fake POST request without opening a real network port.
-	rec := httptest.NewRecorder()                                                 // Create a fake ResponseWriter that records what the handler sends back.
+	req := httptest.NewRequest(http.MethodPost, "/jobs", body)                 // Create a fake POST request without opening a real network port.
+	rec := httptest.NewRecorder()                                              // Create a fake ResponseWriter that records what the handler sends back.
 
 	CreateJob(rec, req) // Call the real HTTP handler directly.
 
