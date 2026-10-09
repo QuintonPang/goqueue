@@ -26,7 +26,19 @@ func Get(id int) (job.Job, bool) { // Get returns both the Job and a bool indica
 	return storedJob, ok      // Return both the copied job and the existence flag to the caller.
 }
 
-func UpdateStatus(id int, status string) bool { // UpdateStatus changes one stored job's Status field.
+func Update(updatedJob job.Job) bool { // Update replaces the stored copy with a complete newer Job value.
+	mu.Lock()         // Take an exclusive lock because the map will be modified.
+	defer mu.Unlock() // Always release the lock before returning.
+
+	if _, ok := jobs[updatedJob.ID]; !ok { // Check that the job already exists before replacing it.
+		return false // Return false when there is no job with this ID.
+	}
+
+	jobs[updatedJob.ID] = updatedJob // Persist status, retry count, error text, and all other job fields together.
+	return true                     // Tell the caller that the update succeeded.
+}
+
+func UpdateStatus(id int, status string) bool { // UpdateStatus changes only one stored job's Status field.
 	mu.Lock()         // Take an exclusive lock because we will modify the shared map.
 	defer mu.Unlock() // Always release the lock when this function returns.
 
