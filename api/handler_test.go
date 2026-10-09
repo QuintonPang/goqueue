@@ -12,7 +12,7 @@ import (
 )
 
 func TestCreateJob(t *testing.T) { // Test that POST /jobs accepts valid JSON and creates a pending job.
-	body := bytes.NewBufferString(`{"type":"email","payload":"Send test email"}`) // Build valid JSON in memory.
+	body := bytes.NewBufferString("{\"type\":\"email\",\"payload\":\"Send test email\"}") // Build valid JSON in memory.
 	req := httptest.NewRequest(http.MethodPost, "/jobs", body)                   // Create a fake POST request.
 	rec := httptest.NewRecorder()                                                // Record the handler's response.
 
