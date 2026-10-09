@@ -40,21 +40,23 @@ func CreateJob(w http.ResponseWriter, r *http.Request) { // CreateJob handles PO
 		return // Stop before assigning an ID or adding anything to the queue.
 	}
 
-	idMu.Lock()   // Obtain exclusive access to nextJobID.
-	nextJobID++   // Increment the shared ID counter.
+	idMu.Lock()     // Obtain exclusive access to nextJobID.
+	nextJobID++     // Increment the shared ID counter.
 	id := nextJobID // Copy the newly generated ID into a local variable for this request.
-	idMu.Unlock() // Release the mutex so another request can generate its ID.
+	idMu.Unlock()   // Release the mutex so another request can generate its ID.
 
 	newJob := job.Job{ // Build the complete Job that GoQueue will store and process.
-		ID:        id,          // Use the unique ID generated above.
-		Type:      req.Type,    // Copy the requested job type.
-		Status:    job.Pending, // New jobs begin in the pending state.
-		Payload:   req.Payload, // Copy the client's payload.
-		CreatedAt: time.Now(),  // Record when the job was created.
+		ID:         id,                    // Use the unique ID generated above.
+		Type:       req.Type,              // Copy the requested job type.
+		Status:     job.Pending,           // New jobs begin in the pending state.
+		Payload:    req.Payload,           // Copy the client's payload.
+		RetryCount: 0,                     // No retry has happened yet.
+		MaxRetries: job.DefaultMaxRetries, // Apply the project's default retry limit.
+		CreatedAt:  time.Now(),            // Record when the job was created.
 	}
 
 	store.Add(newJob)         // Save the pending job so clients can query its status immediately.
-	queue.JobQueue <- newJob // Send the job into the buffered channel for one worker to receive.
+	queue.JobQueue <- newJob  // Send the job into the buffered channel for one worker to receive.
 
 	w.Header().Set("Content-Type", "application/json") // Tell the client that the response body is JSON.
 	w.WriteHeader(http.StatusAccepted)                 // Return HTTP 202 because processing happens asynchronously.
