@@ -1,53 +1,63 @@
-package store // store keeps the current in-memory state of every job.
+package store // store defines how GoQueue saves and retrieves jobs.
 
 import (
-	"sync" // sync provides RWMutex for safe concurrent reads and writes.
+	"context" // context lets database operations be cancelled or timed out.
+	"sync"    // sync protects the in-memory test store from concurrent access.
 
-	"goqueue/job" // job provides the Job struct stored in the map.
+	"goqueue/job" // job provides the Job data model.
 )
 
-var (
-	jobs = make(map[int]job.Job) // Create an empty map: integer job ID -> complete Job value.
-	mu   sync.RWMutex            // Protect the map because HTTP handlers and workers access it concurrently.
-)
-
-func Add(newJob job.Job) { // Add inserts a newly created job into the shared map.
-	mu.Lock()         // Take an exclusive write lock because the map will change.
-	defer mu.Unlock() // Guarantee the write lock is released when Add returns.
-
-	jobs[newJob.ID] = newJob // Store the Job value using its ID as the map key.
+// Store describes the persistence operations the API and workers need.
+// PostgreSQL and the in-memory test store both implement this interface.
+type Store interface {
+	Create(ctx context.Context, newJob *job.Job) error
+	Get(ctx context.Context, id int) (job.Job, bool, error)
+	Update(ctx context.Context, updatedJob job.Job) error
+	Close()
 }
 
-func Get(id int) (job.Job, bool) { // Get returns both the Job and a bool indicating whether the ID exists.
-	mu.RLock()         // Take a read lock; multiple Get calls can hold read locks at the same time.
-	defer mu.RUnlock() // Release this read lock when Get returns.
-
-	storedJob, ok := jobs[id] // Copy the Job out of the map; ok is true only when that key exists.
-	return storedJob, ok      // Return both the copied job and the existence flag to the caller.
+// MemoryStore is used by unit tests so tests do not require a real PostgreSQL server.
+type MemoryStore struct {
+	mu   sync.RWMutex       // Protect jobs because tests may exercise concurrent code.
+	jobs map[int]job.Job     // Map job ID -> Job.
+	nextID int              // Generate IDs similarly to PostgreSQL SERIAL.
 }
 
-func Update(updatedJob job.Job) bool { // Update replaces the stored copy with a complete newer Job value.
-	mu.Lock()         // Take an exclusive lock because the map will be modified.
-	defer mu.Unlock() // Always release the lock before returning.
-
-	if _, ok := jobs[updatedJob.ID]; !ok { // Check that the job already exists before replacing it.
-		return false // Return false when there is no job with this ID.
+// NewMemoryStore creates an empty in-memory implementation of Store.
+func NewMemoryStore() *MemoryStore {
+	return &MemoryStore{
+		jobs: make(map[int]job.Job),
 	}
-
-	jobs[updatedJob.ID] = updatedJob // Persist status, retry count, error text, and all other job fields together.
-	return true                     // Tell the caller that the update succeeded.
 }
 
-func UpdateStatus(id int, status string) bool { // UpdateStatus changes only one stored job's Status field.
-	mu.Lock()         // Take an exclusive lock because we will modify the shared map.
-	defer mu.Unlock() // Always release the lock when this function returns.
+// Create assigns an ID and stores a new job.
+func (s *MemoryStore) Create(ctx context.Context, newJob *job.Job) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 
-	storedJob, ok := jobs[id] // Read a copy of the Job and check whether the requested ID exists.
-	if !ok {                  // Run this branch if no such job exists.
-		return false // Tell the caller that nothing was updated.
-	}
-
-	storedJob.Status = status // Change the status on our local copy of the Job.
-	jobs[id] = storedJob      // Write the changed copy back into the map.
-	return true               // Tell the caller the update succeeded.
+	s.nextID++
+	newJob.ID = s.nextID
+	s.jobs[newJob.ID] = *newJob
+	return nil
 }
+
+// Get returns a copy of a stored job.
+func (s *MemoryStore) Get(ctx context.Context, id int) (job.Job, bool, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	storedJob, ok := s.jobs[id]
+	return storedJob, ok, nil
+}
+
+// Update replaces the stored copy of a job.
+func (s *MemoryStore) Update(ctx context.Context, updatedJob job.Job) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	s.jobs[updatedJob.ID] = updatedJob
+	return nil
+}
+
+// Close exists so MemoryStore satisfies Store. It has nothing to clean up.
+func (s *MemoryStore) Close() {}
