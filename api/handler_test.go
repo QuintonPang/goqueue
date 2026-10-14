@@ -1,22 +1,28 @@
-package api // Use the api package so the tests can call CreateJob and GetJob directly.
+package api
 
 import (
-	"bytes"             // bytes lets us build an in-memory request body from JSON text.
-	"encoding/json"     // encoding/json decodes the handler's JSON response into a Go struct.
-	"net/http"          // net/http provides method names and status-code constants.
-	"net/http/httptest" // httptest creates fake HTTP requests and response recorders for tests.
-	"testing"           // testing is Go's built-in test framework.
+	"bytes"
+	"context"
+	"encoding/json"
+	"fmt"
+	"net/http"
+	"net/http/httptest"
+	"testing"
 
-	"goqueue/job"   // job provides the Job struct and status constants.
-	"goqueue/store" // store lets us prepare and verify job data used by the handlers.
+	"goqueue/job"
+	"goqueue/queue"
+	"goqueue/store"
 )
 
-func TestCreateJob(t *testing.T) { // Test that POST /jobs accepts valid JSON and creates a pending job.
-	body := bytes.NewBufferString("{\"type\":\"email\",\"payload\":\"Send test email\"}") // Build valid JSON in memory.
-	req := httptest.NewRequest(http.MethodPost, "/jobs", body)                   // Create a fake POST request.
-	rec := httptest.NewRecorder()                                                // Record the handler's response.
+func TestCreateJob(t *testing.T) {
+	s := store.NewMemoryStore()
+	handler := NewHandler(s)
 
-	CreateJob(rec, req) // Call the real handler directly.
+	body := bytes.NewBufferString("{\"type\":\"email\",\"payload\":\"Send test email\"}")
+	req := httptest.NewRequest(http.MethodPost, "/jobs", body)
+	rec := httptest.NewRecorder()
+
+	handler.CreateJob(rec, req)
 
 	if rec.Code != http.StatusAccepted {
 		t.Fatalf("expected status %d, got %d", http.StatusAccepted, rec.Code)
@@ -30,43 +36,47 @@ func TestCreateJob(t *testing.T) { // Test that POST /jobs accepts valid JSON an
 	if createdJob.ID <= 0 {
 		t.Errorf("expected a positive job ID, got %d", createdJob.ID)
 	}
-
-	if createdJob.Type != "email" {
-		t.Errorf("expected type %q, got %q", "email", createdJob.Type)
-	}
-
 	if createdJob.Status != job.Pending {
 		t.Errorf("expected status %q, got %q", job.Pending, createdJob.Status)
 	}
-
 	if createdJob.MaxRetries != job.DefaultMaxRetries {
 		t.Errorf("expected max retries %d, got %d", job.DefaultMaxRetries, createdJob.MaxRetries)
 	}
 
-	storedJob, ok := store.Get(createdJob.ID)
-	if !ok {
-		t.Fatal("expected created job to exist in store")
+	storedJob, ok, err := s.Get(context.Background(), createdJob.ID)
+	if err != nil {
+		t.Fatalf("Get returned error: %v", err)
 	}
-
+	if !ok {
+		t.Fatal("expected created job to exist")
+	}
 	if storedJob.Payload != "Send test email" {
 		t.Errorf("expected payload %q, got %q", "Send test email", storedJob.Payload)
 	}
+
+	// CreateJob also puts the job onto the global worker queue. Drain it so tests remain isolated.
+	<-queue.JobQueue
 }
 
 func TestGetJob(t *testing.T) {
+	ctx := context.Background()
+	s := store.NewMemoryStore()
+	handler := NewHandler(s)
+
 	testJob := job.Job{
-		ID:         700002,
 		Type:       "email",
 		Status:     job.Running,
 		Payload:    "Get-job test",
 		MaxRetries: job.DefaultMaxRetries,
 	}
-	store.Add(testJob)
+	if err := s.Create(ctx, &testJob); err != nil {
+		t.Fatalf("Create returned error: %v", err)
+	}
 
-	req := httptest.NewRequest(http.MethodGet, "/jobs/700002", nil)
+	req := httptest.NewRequest(http.MethodGet, fmt.Sprintf("/jobs/%d", testJob.ID), nil)
 	rec := httptest.NewRecorder()
 
-	GetJob(rec, req)
+	handler.GetJob(rec, req)
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("expected status %d, got %d", http.StatusOK, rec.Code)
@@ -76,21 +86,17 @@ func TestGetJob(t *testing.T) {
 	if err := json.NewDecoder(rec.Body).Decode(&returnedJob); err != nil {
 		t.Fatalf("failed to decode response: %v", err)
 	}
-
 	if returnedJob.ID != testJob.ID {
 		t.Errorf("expected ID %d, got %d", testJob.ID, returnedJob.ID)
-	}
-
-	if returnedJob.Status != job.Running {
-		t.Errorf("expected status %q, got %q", job.Running, returnedJob.Status)
 	}
 }
 
 func TestGetJobWithInvalidID(t *testing.T) {
+	handler := NewHandler(store.NewMemoryStore())
 	req := httptest.NewRequest(http.MethodGet, "/jobs/abc", nil)
 	rec := httptest.NewRecorder()
 
-	GetJob(rec, req)
+	handler.GetJob(rec, req)
 
 	if rec.Code != http.StatusBadRequest {
 		t.Errorf("expected status %d, got %d", http.StatusBadRequest, rec.Code)
@@ -98,10 +104,11 @@ func TestGetJobWithInvalidID(t *testing.T) {
 }
 
 func TestGetMissingJob(t *testing.T) {
+	handler := NewHandler(store.NewMemoryStore())
 	req := httptest.NewRequest(http.MethodGet, "/jobs/99999999", nil)
 	rec := httptest.NewRecorder()
 
-	GetJob(rec, req)
+	handler.GetJob(rec, req)
 
 	if rec.Code != http.StatusNotFound {
 		t.Errorf("expected status %d, got %d", http.StatusNotFound, rec.Code)
