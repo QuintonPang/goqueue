@@ -37,9 +37,16 @@ func main() {
 	var wg sync.WaitGroup
 	wg.Add(3)
 
-	go worker.Start(1, &wg, jobStore) // All workers share PostgreSQL as their persistent store.
+	// Start workers before recovery so they can drain the queue even if many jobs are restored.
+	go worker.Start(1, &wg, jobStore)
 	go worker.Start(2, &wg, jobStore)
 	go worker.Start(3, &wg, jobStore)
+
+	recovered, err := worker.RecoverUnfinished(ctx, jobStore, queue.JobQueue)
+	if err != nil {
+		log.Fatalf("failed to recover unfinished jobs: %v", err)
+	}
+	fmt.Println("Recovered jobs:", recovered)
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/jobs", handler.CreateJob)
