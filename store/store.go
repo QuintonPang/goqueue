@@ -2,6 +2,7 @@ package store // store defines how GoQueue saves and retrieves jobs.
 
 import (
 	"context" // context lets database operations be cancelled or timed out.
+	"sort"    // sort keeps recovered jobs in a predictable ID order in MemoryStore tests.
 	"sync"    // sync protects the in-memory test store from concurrent access.
 
 	"goqueue/job" // job provides the Job data model.
@@ -13,14 +14,15 @@ type Store interface {
 	Create(ctx context.Context, newJob *job.Job) error
 	Get(ctx context.Context, id int) (job.Job, bool, error)
 	Update(ctx context.Context, updatedJob job.Job) error
+	ListUnfinished(ctx context.Context) ([]job.Job, error)
 	Close()
 }
 
 // MemoryStore is used by unit tests so tests do not require a real PostgreSQL server.
 type MemoryStore struct {
-	mu   sync.RWMutex       // Protect jobs because tests may exercise concurrent code.
-	jobs map[int]job.Job     // Map job ID -> Job.
-	nextID int              // Generate IDs similarly to PostgreSQL SERIAL.
+	mu     sync.RWMutex   // Protect jobs because tests may exercise concurrent code.
+	jobs   map[int]job.Job // Map job ID -> Job.
+	nextID int            // Generate IDs similarly to PostgreSQL SERIAL.
 }
 
 // NewMemoryStore creates an empty in-memory implementation of Store.
@@ -57,6 +59,26 @@ func (s *MemoryStore) Update(ctx context.Context, updatedJob job.Job) error {
 
 	s.jobs[updatedJob.ID] = updatedJob
 	return nil
+}
+
+// ListUnfinished returns jobs that still need worker processing.
+func (s *MemoryStore) ListUnfinished(ctx context.Context) ([]job.Job, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	unfinished := make([]job.Job, 0)
+	for _, storedJob := range s.jobs {
+		switch storedJob.Status {
+		case job.Pending, job.Running, job.Retrying:
+			unfinished = append(unfinished, storedJob)
+		}
+	}
+
+	sort.Slice(unfinished, func(i, j int) bool {
+		return unfinished[i].ID < unfinished[j].ID
+	})
+
+	return unfinished, nil
 }
 
 // Close exists so MemoryStore satisfies Store. It has nothing to clean up.
