@@ -120,6 +120,54 @@ func (s *PostgresStore) Update(ctx context.Context, updatedJob job.Job) error {
 	return err
 }
 
+// ListUnfinished loads jobs that were pending or mid-processing when the previous process stopped.
+func (s *PostgresStore) ListUnfinished(ctx context.Context) ([]job.Job, error) {
+	const query = `
+		SELECT
+			id,
+			type,
+			status,
+			payload,
+			retry_count,
+			max_retries,
+			error,
+			created_at
+		FROM jobs
+		WHERE status IN ($1, $2, $3)
+		ORDER BY id
+	`
+
+	rows, err := s.pool.Query(ctx, query, job.Pending, job.Running, job.Retrying)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	unfinished := make([]job.Job, 0)
+	for rows.Next() {
+		var storedJob job.Job
+		if err := rows.Scan(
+			&storedJob.ID,
+			&storedJob.Type,
+			&storedJob.Status,
+			&storedJob.Payload,
+			&storedJob.RetryCount,
+			&storedJob.MaxRetries,
+			&storedJob.Error,
+			&storedJob.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		unfinished = append(unfinished, storedJob)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	return unfinished, nil
+}
+
 // Close releases all PostgreSQL connections in the pool.
 func (s *PostgresStore) Close() {
 	s.pool.Close()
