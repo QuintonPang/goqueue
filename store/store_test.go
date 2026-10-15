@@ -86,3 +86,44 @@ func TestMemoryStoreMissingJob(t *testing.T) {
 		t.Error("expected missing job to return ok=false")
 	}
 }
+
+
+func TestMemoryStoreListUnfinished(t *testing.T) {
+	ctx := context.Background()
+	s := NewMemoryStore()
+
+	statuses := []string{
+		job.Pending,
+		job.Running,
+		job.Retrying,
+		job.Completed,
+		job.Failed,
+	}
+
+	for _, status := range statuses {
+		testJob := job.Job{
+			Type:       "test",
+			Status:     status,
+			MaxRetries: job.DefaultMaxRetries,
+		}
+		if err := s.Create(ctx, &testJob); err != nil {
+			t.Fatalf("Create returned error: %v", err)
+		}
+	}
+
+	unfinished, err := s.ListUnfinished(ctx)
+	if err != nil {
+		t.Fatalf("ListUnfinished returned error: %v", err)
+	}
+
+	if len(unfinished) != 3 {
+		t.Fatalf("expected 3 unfinished jobs, got %d", len(unfinished))
+	}
+
+	expectedStatuses := []string{job.Pending, job.Running, job.Retrying}
+	for i, expected := range expectedStatuses {
+		if unfinished[i].Status != expected {
+			t.Errorf("job %d: expected status %q, got %q", i, expected, unfinished[i].Status)
+		}
+	}
+}
