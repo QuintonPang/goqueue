@@ -49,6 +49,12 @@ func processWithRetries(
 
 		err := execute(queuedJob)
 		if err == nil {
+			// An uncertain output write leaves the job recoverable. A replay
+			// uses the same key whether PostgreSQL committed the write or not.
+			if _, err := jobStore.RecordJobOutput(ctx, queuedJob.ID); err != nil {
+				fmt.Println("Worker", workerID, "could not record job output:", err)
+				return
+			}
 			queuedJob.Status = job.Completed
 			queuedJob.Error = ""
 			if err := jobStore.Update(ctx, queuedJob); err != nil {
