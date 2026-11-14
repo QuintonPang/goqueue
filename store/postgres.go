@@ -120,6 +120,28 @@ func (s *PostgresStore) Update(ctx context.Context, updatedJob job.Job) error {
 	return err
 }
 
+// RecordJobOutput atomically writes the output and claims its stable effect key.
+func (s *PostgresStore) RecordJobOutput(ctx context.Context, jobID int) (bool, error) {
+	const query = `
+		WITH output AS (
+			INSERT INTO job_outputs (job_id, payload)
+			SELECT id, payload FROM jobs WHERE id = $1
+			ON CONFLICT (job_id) DO NOTHING
+			RETURNING job_id
+		)
+		SELECT EXISTS (SELECT 1 FROM jobs WHERE id = $1),
+		       EXISTS (SELECT 1 FROM output)
+	`
+	var exists, inserted bool
+	if err := s.pool.QueryRow(ctx, query, jobID).Scan(&exists, &inserted); err != nil {
+		return false, err
+	}
+	if !exists {
+		return false, errors.New("cannot record output for an unknown job")
+	}
+	return inserted, nil
+}
+
 // ListUnfinished loads jobs that were pending or mid-processing when the previous process stopped.
 func (s *PostgresStore) ListUnfinished(ctx context.Context) ([]job.Job, error) {
 	const query = `
